@@ -18,7 +18,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self' https://sdk.scdn.co; frame-src https://sdk.scdn.co; connect-src ipc: http://ipc.localhost https://api.spotify.com; img-src 'self' data: https://*.scdn.co https://*.spotifycdn.com; style-src 'self' 'unsafe-inline'"
     }
   },
   "bundle": {
