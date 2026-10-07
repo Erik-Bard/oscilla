@@ -1,5 +1,7 @@
 import "./App.css";
 import { useSession } from "./session";
+import { Home } from "./Home";
+import { PlayerProvider } from "./player";
 import { Wallpaper } from "./Wallpaper";
 
 function SpotifyLogo() {
@@ -39,51 +41,15 @@ function Landing() {
   );
 }
 
-function SignOutIcon() {
-  return (
-    <svg viewBox="0 0 256 256" width="18" height="18" aria-hidden="true">
-      <path
-        fill="currentColor"
-        d="M120,216a8,8,0,0,1-8,8H48a8,8,0,0,1-8-8V40a8,8,0,0,1,8-8h64a8,8,0,0,1,0,16H56V208h56A8,8,0,0,1,120,216Zm109.66-93.66-40-40a8,8,0,0,0-11.32,11.32L204.69,120H112a8,8,0,0,0,0,16h92.69l-26.35,26.34a8,8,0,0,0,11.32,11.32l40-40A8,8,0,0,0,229.66,122.34Z"
-      />
-    </svg>
-  );
-}
-
-function Home() {
-  const session = useSession();
-  if (session.status !== "signedIn") return null;
-  const { listener } = session;
-  return (
-    <div className="stage">
-      <div className="avatar-ring">
-        {listener.imageUrl ? (
-          <img className="avatar" src={listener.imageUrl} alt="" />
-        ) : (
-          <span className="avatar" aria-hidden="true">
-            {listener.displayName.charAt(0).toUpperCase()}
-          </span>
-        )}
-      </div>
-      <div>
-        <p className="eyebrow">Welcome back</p>
-        <h1 className="listener-name">{listener.displayName}</h1>
-      </div>
-      <button className="ghost-button" onClick={session.signOut}>
-        <SignOutIcon />
-        Sign out
-      </button>
-    </div>
-  );
-}
-
 function App() {
-  const { status } = useSession();
+  const session = useSession();
   return (
     <main>
       <Wallpaper />
-      {status === "restoring" ? null : status === "signedIn" ? (
-        <Home />
+      {session.status === "restoring" ? null : session.status === "signedIn" ? (
+        <PlayerProvider>
+          <Home listener={session.listener} signOut={session.signOut} />
+        </PlayerProvider>
       ) : (
         <Landing />
       )}
