@@ -23,6 +23,10 @@ body {
   margin: 0;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 main {
   position: relative;
   display: grid;
@@ -752,10 +756,6 @@ button:focus-visible {
   background: var(--accent);
 }
 
-.transport-spacer {
-  width: 40px;
-}
-
 .tracklist-page {
   --tint: var(--trace-2);
   min-height: 100%;
@@ -883,9 +883,24 @@ button:focus-visible {
   transform: scale(0.96);
 }
 
-.page-shuffle {
+.topbar-shuffle {
   width: 44px;
   height: 44px;
+  border: 1px solid var(--line);
+  background: rgb(15 15 35 / 0.6);
+  transition:
+    color 150ms ease-out,
+    border-color 150ms ease-out,
+    background-color 150ms ease-out;
+}
+
+.topbar-shuffle:hover {
+  border-color: rgb(248 250 252 / 0.4);
+  background: rgb(248 250 252 / 0.06);
+}
+
+.topbar-shuffle[aria-pressed="true"] {
+  border-color: var(--accent);
 }
 
 .tracks {
@@ -1147,5 +1162,208 @@ button:focus-visible {
   .tracklist-page,
   .skeleton-block {
     animation: none;
+  }
+}
+
+.nav-pills {
+  display: flex;
+  gap: 8px;
+}
+
+.nav-pill {
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+  transition:
+    color 150ms ease-out,
+    border-color 150ms ease-out,
+    background-color 150ms ease-out;
+}
+
+.nav-pill:hover {
+  color: var(--fg);
+}
+
+.nav-pill[aria-current="page"] {
+  border-color: rgb(124 131 255 / 0.55);
+  background: rgb(124 131 255 / 0.12);
+  color: var(--fg);
+}
+
+.library {
+  gap: 16px;
+  max-width: 600px;
+  padding-top: 40px;
+}
+
+.library-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.new-playlist {
+  anchor-name: --new-playlist;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.new-playlist-menu {
+  position-anchor: --new-playlist;
+  display: grid;
+  gap: 8px;
+  width: 280px;
+  padding: 12px;
+}
+
+.new-playlist-menu:not(:popover-open) {
+  display: none;
+}
+
+.new-playlist-row {
+  display: flex;
+  gap: 8px;
+}
+
+.text-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: none;
+  color: var(--fg);
+}
+
+.create-button {
+  padding: 0 14px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--trace-1);
+  color: var(--bg);
+  font-weight: 600;
+}
+
+.create-button:disabled {
+  opacity: 0.6;
+}
+
+.new-playlist-menu .notice-error {
+  margin: 0;
+  font-size: 13px;
+}
+
+.search-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.search-field:focus-within {
+  border-color: rgb(124 131 255 / 0.55);
+}
+
+.search-field input {
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--fg);
+  font-size: 14px;
+}
+
+.search-field kbd {
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 11px;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  min-height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  font-size: 14px;
+  transition:
+    color 150ms ease-out,
+    background-color 150ms ease-out;
+}
+
+.chip:hover {
+  color: var(--fg);
+}
+
+.chip[aria-pressed="true"] {
+  border-color: var(--fg);
+  background: var(--fg);
+  color: var(--bg);
+  font-weight: 600;
+}
+
+.recents.compact {
+  gap: 0;
+}
+
+.recents.compact .recent {
+  gap: 12px;
+  min-height: 52px;
+  padding: 6px 8px;
+  border-color: transparent;
+  border-radius: 8px;
+  background: none;
+  backdrop-filter: none;
+}
+
+.recents.compact .recent:hover {
+  background: var(--surface-hover);
+}
+
+.recents.compact .recent.current {
+  border-color: transparent;
+}
+
+.recents.compact .cover,
+.recents.compact .cover-play {
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
+}
+
+.recents.compact .cover-overlay span {
+  width: 24px;
+  height: 24px;
+}
+
+.recents.compact .recent-label,
+.recents.compact .recent-when {
+  font-size: 13px;
+}
+
+@media (max-width: 480px) {
+  .search-field kbd {
+    display: none;
   }
 }

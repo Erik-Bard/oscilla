@@ -7,8 +7,10 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { coverUrl, type SpotifyImage } from "./recents";
-import { spotifyFetch } from "./spotify";
+import { coverUrl } from "../utils/recents";
+import { spotifyFetch } from "../utils/spotify";
+import type { SpotifyImage } from "../types/spotify";
+import type { NowPlaying } from "../types/player";
 
 type SdkState = {
   paused: boolean;
@@ -84,18 +86,6 @@ function loadSdk() {
   return sdk;
 }
 
-export type NowPlaying = {
-  contextUri: string | null;
-  trackUri: string;
-  name: string;
-  artists: string;
-  imageUrl: string | null;
-  paused: boolean;
-  durationMs: number;
-  positionMs: number;
-  reportedAt: number;
-};
-
 type Player = {
   nowPlaying: NowPlaying | null;
   error: string | null;
@@ -108,11 +98,24 @@ type Player = {
   next: () => void;
   seek: (positionMs: number) => void;
   setVolume: (volume: number) => void;
+  toggleMute: () => void;
 };
 
 const PlayerContext = createContext<Player | null>(null);
 
-const INITIAL_VOLUME = 0.7;
+const SAVED_KEY = "oscilla.playback";
+const SAVED_DEFAULTS = { volume: 0.7, unmutedVolume: 0.7, shuffle: false };
+
+function loadSaved(): typeof SAVED_DEFAULTS {
+  try {
+    return {
+      ...SAVED_DEFAULTS,
+      ...JSON.parse(localStorage.getItem(SAVED_KEY) ?? "{}"),
+    };
+  } catch {
+    return SAVED_DEFAULTS;
+  }
+}
 const PLAYBACK_FAILED = "Couldn't start playback. Try again.";
 
 function isTyping(target: EventTarget | null) {
@@ -129,7 +132,7 @@ async function trackCount(contextUri: string) {
     ? "/me/tracks?limit=1"
     : type === "album"
       ? `/albums/${id}/tracks?limit=1`
-      : `/playlists/${id}/tracks?limit=1&fields=total`;
+      : `/playlists/${id}/items?limit=1&fields=total`;
   const res = await spotifyFetch(path);
   if (!res.ok) return null;
   const { total }: { total: number } = await res.json();
@@ -154,8 +157,10 @@ function toNowPlaying(state: SdkState): NowPlaying {
 export function PlayerProvider({ children }: { children: ReactNode }) {
   const [nowPlaying, setNowPlaying] = useState<NowPlaying | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [volume, setVolumeState] = useState(INITIAL_VOLUME);
-  const [shuffle, setShuffle] = useState(false);
+  const [saved] = useState(loadSaved);
+  const [volume, setVolumeState] = useState(saved.volume);
+  const [unmutedVolume, setUnmutedVolume] = useState(saved.unmutedVolume);
+  const [shuffle, setShuffle] = useState(saved.shuffle);
   const player = useRef<SdkPlayer | null>(null);
   const deviceId = useRef<string | null>(null);
 
@@ -171,7 +176,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             void invoke<string>("access_token", { forceRefresh: false }).then(
               callback,
             ),
-          volume: INITIAL_VOLUME,
+          volume: saved.volume,
         });
         created.addListener("ready", ({ device_id }) => {
           deviceId.current = device_id;
@@ -207,7 +212,16 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       player.current = null;
       deviceId.current = null;
     };
-  }, []);
+  }, [saved]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        SAVED_KEY,
+        JSON.stringify({ volume, unmutedVolume, shuffle }),
+      );
+    } catch {}
+  }, [volume, unmutedVolume, shuffle]);
 
   const sendShuffle = (state: boolean) =>
     spotifyFetch(
@@ -260,6 +274,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     void player.current?.setVolume(next);
   };
 
+  const toggleMute = () => {
+    if (volume > 0) setUnmutedVolume(volume);
+    setVolume(volume > 0 ? 0 : unmutedVolume);
+  };
+
   const value: Player = {
     nowPlaying,
     error,
@@ -272,6 +291,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     next: () => void player.current?.nextTrack(),
     seek,
     setVolume,
+    toggleMute,
   };
 
   return <PlayerContext value={value}>{children}</PlayerContext>;

@@ -7,12 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-
-export type Listener = {
-  id: string;
-  displayName: string;
-  imageUrl: string | null;
-};
+import type { Listener } from "../types/session";
 
 type SessionState =
   | { status: "restoring" }

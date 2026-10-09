@@ -11,11 +11,9 @@ import {
   HeartIcon,
   PauseIcon,
   PlayIcon,
-  ShuffleIcon,
-} from "./icons";
-import { usePlayer } from "./player";
-import type { Listener } from "./session";
-import { spotifyFetch } from "./spotify";
+} from "../components/icons";
+import { usePlayer } from "../context/player";
+import { API_ROOT, getJson } from "../utils/spotify";
 import {
   albumTracks,
   formatDuration,
@@ -25,21 +23,17 @@ import {
   fromSavedTracks,
   playlistTracks,
   savedTracks,
-  type ApiAlbum,
-  type ApiPage,
-  type ApiPlaylist,
-  type ApiSavedTracks,
-  type Tracklist,
-} from "./tracklist";
+} from "../utils/tracklist";
+import type {
+  ApiAlbum,
+  ApiPage,
+  ApiPlaylist,
+  ApiSavedTracks,
+} from "../types/spotify";
+import type { Tracklist } from "../types/tracklist";
+import type { Listener } from "../types/session";
 
-const API_ROOT = "https://api.spotify.com/v1";
 const FALLBACK_TINT = "#4338ca";
-
-async function getJson<T>(path: string): Promise<T> {
-  const res = await spotifyFetch(path);
-  if (!res.ok) throw new Error(String(res.status));
-  return res.json();
-}
 
 function loadTracklist(uri: string, listener: Listener): Promise<Tracklist> {
   const id = uri.split(":").pop();
@@ -264,10 +258,12 @@ export function TracklistPage({
                 {list.owner}
               </span>
               {list.year && <span>· {list.year}</span>}
-              <span>
-                · {songs}
-                {allLoaded && `, ${formatTotal(totalMs)}`}
-              </span>
+              {!list.tracksHidden && (
+                <span>
+                  · {songs}
+                  {allLoaded && `, ${formatTotal(totalMs)}`}
+                </span>
+              )}
             </p>
           </div>
         </div>
@@ -279,123 +275,126 @@ export function TracklistPage({
           >
             {isPlaying ? <PauseIcon size={24} /> : <PlayIcon size={24} />}
           </button>
-          <button
-            className="icon-button toggle page-shuffle"
-            aria-label="Shuffle"
-            aria-pressed={player.shuffle}
-            onClick={player.toggleShuffle}
+        </div>
+        {list.tracksHidden ? (
+          <p className="notice">
+            Spotify only shares the songs of playlists you own or collaborate
+            on. You can still play this one.
+          </p>
+        ) : (
+          <div
+            role="grid"
+            aria-label={`${list.name} tracks`}
+            aria-rowcount={list.total + 1}
+            className={`tracks${isAlbum ? " album" : ""}`}
           >
-            <ShuffleIcon size={26} />
-          </button>
-        </div>
-        <div
-          role="grid"
-          aria-label={`${list.name} tracks`}
-          aria-rowcount={list.total + 1}
-          className={`tracks${isAlbum ? " album" : ""}`}
-        >
-          <div className="tracks-head" role="row">
-            <span role="columnheader" className="col-num">
-              #
-            </span>
-            <span role="columnheader">Title</span>
-            {!isAlbum && (
-              <>
-                <span role="columnheader" className="col-album">
-                  Album
-                </span>
-                <span role="columnheader" className="col-added">
-                  Date added
-                </span>
-              </>
-            )}
-            <span role="columnheader" className="col-dur" aria-label="Duration">
-              <ClockIcon />
-            </span>
-          </div>
-          {list.tracks.map((track, index) => {
-            const playing =
-              isCurrent && player.nowPlaying?.trackUri === track.uri;
-            const classes = [
-              "row",
-              playing && "playing",
-              playing && player.nowPlaying?.paused && "is-paused",
-              !track.playable && "unavailable",
-            ]
-              .filter(Boolean)
-              .join(" ");
-            return (
-              <div
-                key={track.key}
-                ref={(el) => {
-                  rows.current[index] = el;
-                }}
-                className={classes}
-                role="row"
-                aria-rowindex={index + 2}
-                aria-selected={selected === index}
-                aria-disabled={!track.playable || undefined}
-                title={track.playable ? undefined : "Not available"}
-                tabIndex={selected === index ? 0 : -1}
-                onClick={() => setSelected(index)}
-                onDoubleClick={() => playTrack(index)}
-                onKeyDown={(e) => onRowKey(e, index)}
+            <div className="tracks-head" role="row">
+              <span role="columnheader" className="col-num">
+                #
+              </span>
+              <span role="columnheader">Title</span>
+              {!isAlbum && (
+                <>
+                  <span role="columnheader" className="col-album">
+                    Album
+                  </span>
+                  <span role="columnheader" className="col-added">
+                    Date added
+                  </span>
+                </>
+              )}
+              <span
+                role="columnheader"
+                className="col-dur"
+                aria-label="Duration"
               >
-                <span className="col-num" role="gridcell">
-                  <span className="row-number">
-                    {playing ? <Equalizer label="Playing" /> : index + 1}
+                <ClockIcon />
+              </span>
+            </div>
+            {list.tracks.map((track, index) => {
+              const playing =
+                isCurrent && player.nowPlaying?.trackUri === track.uri;
+              const classes = [
+                "row",
+                playing && "playing",
+                playing && player.nowPlaying?.paused && "is-paused",
+                !track.playable && "unavailable",
+              ]
+                .filter(Boolean)
+                .join(" ");
+              return (
+                <div
+                  key={track.key}
+                  ref={(el) => {
+                    rows.current[index] = el;
+                  }}
+                  className={classes}
+                  role="row"
+                  aria-rowindex={index + 2}
+                  aria-selected={selected === index}
+                  aria-disabled={!track.playable || undefined}
+                  title={track.playable ? undefined : "Not available"}
+                  tabIndex={selected === index ? 0 : -1}
+                  onClick={() => setSelected(index)}
+                  onDoubleClick={() => playTrack(index)}
+                  onKeyDown={(e) => onRowKey(e, index)}
+                >
+                  <span className="col-num" role="gridcell">
+                    <span className="row-number">
+                      {playing ? <Equalizer label="Playing" /> : index + 1}
+                    </span>
+                    {track.playable && (
+                      <button
+                        className="icon-button row-play"
+                        tabIndex={-1}
+                        aria-label={`Play ${track.name}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          playTrack(index);
+                        }}
+                      >
+                        <PlayIcon size={16} />
+                      </button>
+                    )}
                   </span>
-                  {track.playable && (
-                    <button
-                      className="icon-button row-play"
-                      tabIndex={-1}
-                      aria-label={`Play ${track.name}`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        playTrack(index);
-                      }}
-                    >
-                      <PlayIcon size={16} />
-                    </button>
+                  <span className="track-title" role="gridcell">
+                    {!isAlbum &&
+                      (track.imageUrl ? (
+                        <img
+                          className="thumb"
+                          src={track.imageUrl}
+                          alt=""
+                          width={40}
+                          height={40}
+                          loading="lazy"
+                        />
+                      ) : (
+                        <span className="thumb" />
+                      ))}
+                    <span className="track-text">
+                      <span className="track-name">{track.name}</span>
+                      <span className="track-sub">{track.artists}</span>
+                    </span>
+                  </span>
+                  {!isAlbum && (
+                    <>
+                      <span className="col-album track-sub" role="gridcell">
+                        {track.album}
+                      </span>
+                      <span className="col-added track-sub" role="gridcell">
+                        {track.addedAt &&
+                          dateAdded.format(new Date(track.addedAt))}
+                      </span>
+                    </>
                   )}
-                </span>
-                <span className="track-title" role="gridcell">
-                  {!isAlbum &&
-                    (track.imageUrl ? (
-                      <img
-                        className="thumb"
-                        src={track.imageUrl}
-                        alt=""
-                        width={40}
-                        height={40}
-                        loading="lazy"
-                      />
-                    ) : (
-                      <span className="thumb" />
-                    ))}
-                  <span className="track-text">
-                    <span className="track-name">{track.name}</span>
-                    <span className="track-sub">{track.artists}</span>
+                  <span className="col-dur track-sub" role="gridcell">
+                    {formatDuration(track.durationMs)}
                   </span>
-                </span>
-                {!isAlbum && (
-                  <>
-                    <span className="col-album track-sub" role="gridcell">
-                      {track.album}
-                    </span>
-                    <span className="col-added track-sub" role="gridcell">
-                      {track.addedAt &&
-                        dateAdded.format(new Date(track.addedAt))}
-                    </span>
-                  </>
-                )}
-                <span className="col-dur track-sub" role="gridcell">
-                  {formatDuration(track.durationMs)}
-                </span>
-              </div>
-            );
-          })}
-        </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
         {list.next && <div ref={sentinel} className="sentinel" />}
       </div>
     </div>

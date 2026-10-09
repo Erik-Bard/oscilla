@@ -2,20 +2,32 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   albumLabel,
   candidates,
+  newestFirst,
   coverUrl,
   playedAgo,
-  type Candidate,
-  type Play,
-  type SpotifyImage,
-} from "./recents";
-import { BackIcon, Equalizer, HeartIcon, PauseIcon, PlayIcon } from "./icons";
-import { NowPlayingBar } from "./NowPlayingBar";
+} from "../utils/recents";
+import {
+  BackIcon,
+  Equalizer,
+  HeartIcon,
+  PauseIcon,
+  PlayIcon,
+  ShuffleIcon,
+} from "../components/icons";
+import { NowPlayingBar } from "../components/NowPlayingBar";
+import { LibraryPage } from "./LibraryPage";
 import { TracklistPage } from "./TracklistPage";
-import { usePlayer } from "./player";
-import type { Listener } from "./session";
-import { spotifyFetch } from "./spotify";
+import { usePlayer } from "../context/player";
+import { spotifyFetch } from "../utils/spotify";
+import { useFocusedLoad } from "../hooks/useFocusedLoad";
+import type { Play, SpotifyImage } from "../types/spotify";
+import type { Candidate } from "../types/recents";
+import type { Listener } from "../types/session";
 
 const RECENT_COUNT = 5;
+
+type View = "home" | "library";
+type Place = { view: View; uri?: string };
 
 type Recent = {
   uri: string;
@@ -29,7 +41,8 @@ type Recent = {
 type Playlist = {
   name: string;
   images: SpotifyImage[] | null;
-  owner: { display_name: string | null };
+  collaborative: boolean;
+  owner: { id: string; display_name: string | null };
 };
 
 async function resolve(
@@ -62,12 +75,13 @@ async function resolve(
     case "playlist": {
       const id = candidate.uri.split(":").pop();
       const res = await spotifyFetch(
-        `/playlists/${id}?fields=name,images,owner(display_name)`,
+        `/playlists/${id}?fields=name,images,collaborative,owner(id,display_name)`,
       );
-      // Spotify refuses its own playlists (Daily Mix, Discover Weekly) to newer apps.
       if (res.status === 403 || res.status === 404) return null;
       if (!res.ok) throw new Error(`playlist ${res.status}`);
       const playlist: Playlist = await res.json();
+      if (playlist.owner.id !== listener.id && !playlist.collaborative)
+        return null;
       return {
         ...base,
         name: playlist.name,
@@ -79,11 +93,46 @@ async function resolve(
   }
 }
 
+const STARTED_KEY = "oscilla.started";
+const STARTED_LIMIT = 20;
+
+function loadStarted(): Play[] {
+  try {
+    return JSON.parse(localStorage.getItem(STARTED_KEY) ?? "[]");
+  } catch {
+    return [];
+  }
+}
+
+async function rememberCurrentPlay(): Promise<Play[]> {
+  const started = loadStarted();
+  const res = await spotifyFetch("/me/player/currently-playing");
+  if (res.status !== 200) return started;
+  const { context, item, timestamp } = await res.json();
+  if (!context || !item?.album) return started;
+  const { uri, name, album_type, images, artists } = item.album;
+  const current: Play = {
+    context: { type: context.type, uri: context.uri },
+    track: { album: { uri, name, album_type, images, artists } },
+    played_at: new Date(timestamp).toISOString(),
+  };
+  const updated = [
+    current,
+    ...started.filter((p) => p.context?.uri !== context.uri),
+  ].slice(0, STARTED_LIMIT);
+  try {
+    localStorage.setItem(STARTED_KEY, JSON.stringify(updated));
+  } catch {}
+  return updated;
+}
+
 async function loadRecents(listener: Listener): Promise<Recent[]> {
   const res = await spotifyFetch("/me/player/recently-played?limit=50");
   if (!res.ok) throw new Error(`recently-played ${res.status}`);
   const { items }: { items: Play[] } = await res.json();
-  const queue = candidates(items);
+  const queue = candidates(
+    newestFirst([...(await rememberCurrentPlay()), ...items]),
+  );
   const recents: Recent[] = [];
   while (queue.length && recents.length < RECENT_COUNT) {
     const batch = queue.splice(0, RECENT_COUNT - recents.length);
@@ -91,45 +140,6 @@ async function loadRecents(listener: Listener): Promise<Recent[]> {
     recents.push(...resolved.filter((r) => r !== null));
   }
   return recents;
-}
-
-type RecentsState =
-  | { status: "loading" }
-  | { status: "error" }
-  | { status: "ready"; recents: Recent[] };
-
-function useRecents(listener: Listener) {
-  const [state, setState] = useState<RecentsState>({ status: "loading" });
-  const latest = useRef(0);
-
-  const load = () => {
-    const request = ++latest.current;
-    loadRecents(listener).then(
-      (recents) => {
-        if (request === latest.current) setState({ status: "ready", recents });
-      },
-      () => {
-        if (request === latest.current)
-          setState((prev) =>
-            prev.status === "ready" ? prev : { status: "error" },
-          );
-      },
-    );
-  };
-
-  useEffect(() => {
-    load();
-    window.addEventListener("focus", load);
-    return () => window.removeEventListener("focus", load);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [listener]);
-
-  const retry = () => {
-    setState({ status: "loading" });
-    load();
-  };
-
-  return { state, retry };
 }
 
 function greeting(hour: number) {
@@ -249,28 +259,46 @@ export function Home({
   listener: Listener;
   signOut: () => void;
 }) {
-  const { state, retry } = useRecents(listener);
+  const player = usePlayer();
+  const { state, retry } = useFocusedLoad(
+    () => loadRecents(listener),
+    `${listener.id}|${player.nowPlaying?.contextUri}`,
+  );
+  const [view, setView] = useState<View>("home");
   const [openUri, setOpenUri] = useState<string | null>(null);
+  const [libraryVisited, setLibraryVisited] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
-  const homeScroll = useRef(0);
+  const listScroll = useRef(0);
   const firstName = listener.displayName.split(" ")[0];
+  if (view === "library" && !libraryVisited) setLibraryVisited(true);
 
   useEffect(() => {
-    const onPop = (event: PopStateEvent) =>
-      setOpenUri((event.state as { uri?: string } | null)?.uri ?? null);
+    const onPop = (event: PopStateEvent) => {
+      const state = event.state as Place | null;
+      setView(state?.view ?? "home");
+      setOpenUri(state?.uri ?? null);
+    };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
 
   useLayoutEffect(() => {
     if (scroller.current)
-      scroller.current.scrollTop = openUri ? 0 : homeScroll.current;
-  }, [openUri]);
+      scroller.current.scrollTop = openUri ? 0 : listScroll.current;
+  }, [openUri, view]);
 
   const open = (uri: string) => {
-    homeScroll.current = scroller.current?.scrollTop ?? 0;
-    history.pushState({ uri }, "");
+    listScroll.current = scroller.current?.scrollTop ?? 0;
+    history.pushState({ view, uri } satisfies Place, "");
     setOpenUri(uri);
+  };
+
+  const go = (target: View) => {
+    if (target === view && !openUri) return;
+    listScroll.current = 0;
+    history.pushState({ view: target } satisfies Place, "");
+    setView(target);
+    setOpenUri(null);
   };
 
   return (
@@ -286,6 +314,27 @@ export function Home({
           </button>
         )}
         <span className="topbar-wordmark">oscilla</span>
+        <nav className="nav-pills" aria-label="Main">
+          {(["home", "library"] as const).map((target) => (
+            <button
+              key={target}
+              className="nav-pill"
+              aria-current={view === target ? "page" : undefined}
+              onClick={() => go(target)}
+            >
+              {target === "home" ? "Home" : "Library"}
+            </button>
+          ))}
+        </nav>
+        <button
+          className="icon-button toggle topbar-shuffle"
+          aria-label="Shuffle"
+          aria-pressed={player.shuffle}
+          title={player.shuffle ? "Shuffle is on" : "Shuffle is off"}
+          onClick={player.toggleShuffle}
+        >
+          <ShuffleIcon size={20} />
+        </button>
         <button className="account-button" popoverTarget="account-menu">
           <Avatar listener={listener} />
           <span className="account-name">{listener.displayName}</span>
@@ -304,7 +353,7 @@ export function Home({
         <section
           className="home-column"
           aria-labelledby="recents-heading"
-          hidden={!!openUri}
+          hidden={!!openUri || view !== "home"}
         >
           <div>
             <p className="eyebrow">
@@ -330,10 +379,17 @@ export function Home({
                 </button>
               </div>
             ) : (
-              <RecentList recents={state.recents} onOpen={open} />
+              <RecentList recents={state.value} onOpen={open} />
             )}
           </div>
         </section>
+        {libraryVisited && (
+          <LibraryPage
+            listener={listener}
+            hidden={!!openUri || view !== "library"}
+            onOpen={open}
+          />
+        )}
       </div>
       <NowPlayingBar />
     </div>

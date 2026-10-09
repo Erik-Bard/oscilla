@@ -1,5 +1,11 @@
 import assert from "node:assert/strict";
-import { candidates, coverUrl, playedAgo, type Play } from "../src/recents.ts";
+import {
+  candidates,
+  coverUrl,
+  newestFirst,
+  playedAgo,
+} from "../../src/utils/recents.ts";
+import type { Play } from "../../src/types/spotify.ts";
 
 function play(
   playedAt: string,
@@ -61,5 +67,17 @@ assert.equal(playedAgo("2026-10-07T11:48:00Z", now), "12 minutes ago");
 assert.equal(playedAgo("2026-10-07T10:00:00Z", now), "2 hours ago");
 assert.equal(playedAgo("2026-10-06T10:00:00Z", now), "yesterday");
 assert.equal(playedAgo("2026-10-04T12:00:00Z", now), "3 days ago");
+
+assert.deepEqual(
+  candidates(
+    newestFirst([
+      play("2026-10-07T12:05:00Z", focus),
+      play("2026-10-07T12:03:00Z", liked),
+      play("2026-10-07T12:04:00Z", blonde),
+      play("2026-10-07T12:01:00Z", focus),
+    ]),
+  ).map((c) => c.uri),
+  [focus.uri, blonde.uri, liked.uri],
+);
 
 console.log("recents: ok");

@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { PauseIcon, PlayIcon, ShuffleIcon } from "./icons";
-import { usePlayer, type NowPlaying } from "./player";
-import { formatDuration } from "./tracklist";
+import { useEffect, useState, type CSSProperties } from "react";
+import { PauseIcon, PlayIcon } from "./icons";
+import { usePlayer } from "../context/player";
+import { formatDuration } from "../utils/tracklist";
+import type { NowPlaying } from "../types/player";
 
 function currentPosition(nowPlaying: NowPlaying, now: number) {
   if (nowPlaying.paused) return nowPlaying.positionMs;
@@ -47,7 +48,6 @@ export function NowPlayingBar() {
   const player = usePlayer();
   const { nowPlaying, error, volume } = player;
   const [dragMs, setDragMs] = useState<number | null>(null);
-  const volumeBeforeMute = useRef(volume);
   const now = useAnimationClock(!!nowPlaying && !nowPlaying.paused);
 
   const errorLine = error && (
@@ -65,14 +65,6 @@ export function NowPlayingBar() {
     if (dragMs === null) return;
     player.seek(dragMs);
     setDragMs(null);
-  };
-  const toggleMute = () => {
-    if (volume > 0) {
-      volumeBeforeMute.current = volume;
-      player.setVolume(0);
-    } else {
-      player.setVolume(volumeBeforeMute.current || 0.7);
-    }
   };
 
   return (
@@ -92,14 +84,6 @@ export function NowPlayingBar() {
         </div>
         <div className="transport">
           <div className="transport-buttons">
-            <button
-              className="icon-button toggle"
-              aria-label="Shuffle"
-              aria-pressed={player.shuffle}
-              onClick={player.toggleShuffle}
-            >
-              <ShuffleIcon />
-            </button>
             <button
               className="icon-button"
               aria-label="Previous"
@@ -135,7 +119,6 @@ export function NowPlayingBar() {
                 <path fill="currentColor" d="M16 5h2v14h-2zM4 5v14l11-7z" />
               </svg>
             </button>
-            <span className="transport-spacer" aria-hidden="true" />
           </div>
           <div className="timeline">
             <span>{formatDuration(positionMs)}</span>
@@ -161,7 +144,7 @@ export function NowPlayingBar() {
           <button
             className="icon-button"
             aria-label={volume > 0 ? "Mute" : "Unmute"}
-            onClick={toggleMute}
+            onClick={player.toggleMute}
           >
             <VolumeIcon muted={volume === 0} />
           </button>

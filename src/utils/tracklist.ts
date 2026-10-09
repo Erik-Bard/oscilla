@@ -1,70 +1,13 @@
-import { albumLabel, coverUrl, type SpotifyImage } from "./recents.ts";
-
-export type Track = {
-  key: string;
-  uri: string;
-  name: string;
-  artists: string;
-  album: string | null;
-  imageUrl: string | null;
-  addedAt: string | null;
-  durationMs: number;
-  playable: boolean;
-};
-
-export type Tracklist = {
-  kind: "album" | "playlist" | "likedSongs";
-  typeLabel: string;
-  name: string;
-  owner: string;
-  ownerId: string | null;
-  year: string | null;
-  imageUrl: string | null;
-  total: number;
-  tracks: Track[];
-  next: string | null;
-};
-
-type ApiTrack = {
-  uri: string;
-  name: string;
-  duration_ms: number;
-  is_playable?: boolean;
-  is_local?: boolean;
-  artists?: { name: string }[];
-  show?: { name: string };
-  album?: { name: string; images: SpotifyImage[] };
-  images?: SpotifyImage[];
-};
-
-type PlaylistEntry = {
-  added_at: string | null;
-  is_local?: boolean;
-  track?: ApiTrack | null;
-  item?: ApiTrack | null;
-};
-
-export type ApiPage<T> = { items: T[]; next: string | null; total: number };
-
-export type ApiAlbum = {
-  name: string;
-  album_type: string;
-  release_date: string;
-  images: SpotifyImage[];
-  artists: { name: string }[];
-  tracks: ApiPage<ApiTrack>;
-};
-
-export type ApiPlaylist = {
-  name: string;
-  public: boolean | null;
-  images: SpotifyImage[] | null;
-  owner: { id: string; display_name: string | null };
-  tracks?: ApiPage<PlaylistEntry>;
-  items?: ApiPage<PlaylistEntry>;
-};
-
-export type ApiSavedTracks = ApiPage<{ added_at: string; track: ApiTrack }>;
+import { albumLabel, coverUrl } from "./recents.ts";
+import type {
+  ApiAlbum,
+  ApiPage,
+  ApiPlaylist,
+  ApiSavedTracks,
+  ApiTrack,
+  PlaylistEntry,
+} from "../types/spotify.ts";
+import type { Track, Tracklist } from "../types/tracklist.ts";
 
 function toTrack(
   track: ApiTrack,
@@ -133,6 +76,7 @@ export function fromPlaylist(playlist: ApiPlaylist): Tracklist {
     total: page?.total ?? 0,
     tracks: page ? playlistTracks(page, 0) : [],
     next: page?.next ?? null,
+    tracksHidden: !page,
   };
 }
 

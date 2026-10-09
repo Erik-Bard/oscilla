@@ -1,8 +1,8 @@
 import "./App.css";
-import { useSession } from "./session";
-import { Home } from "./Home";
-import { PlayerProvider } from "./player";
-import { Wallpaper } from "./Wallpaper";
+import { useSession } from "./context/session";
+import { Home } from "./pages/Home";
+import { PlayerProvider } from "./context/player";
+import { Wallpaper } from "./components/Wallpaper";
 
 function SpotifyLogo() {
   return (

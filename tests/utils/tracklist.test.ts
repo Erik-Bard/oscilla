@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { formatTotal, fromPlaylist } from "../src/tracklist.ts";
+import { formatTotal, fromPlaylist } from "../../src/utils/tracklist.ts";
 
 const track = (uri: string, extra = {}) => ({
   uri,
@@ -53,3 +53,12 @@ assert.equal(formatTotal(41 * 60_000 + 12_000), "41 min 12 sec");
 assert.equal(formatTotal(255 * 60_000), "about 4 hr 15 min");
 
 console.log("tracklist: ok");
+
+const followed = fromPlaylist({
+  name: "Someone else's mix",
+  public: true,
+  images: null,
+  owner: { id: "friend", display_name: "Friend" },
+});
+assert.equal(followed.tracksHidden, true);
+assert.equal(list.tracksHidden, false);

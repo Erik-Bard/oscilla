@@ -1,27 +1,5 @@
-export type SpotifyImage = { url: string; width: number | null };
-
-export type Play = {
-  played_at: string;
-  context: { type: string; uri: string } | null;
-  track: {
-    album: {
-      uri: string;
-      name: string;
-      album_type: string;
-      images: SpotifyImage[];
-      artists: { name: string }[];
-    };
-  };
-};
-
-type Played = { uri: string; playedAt: string };
-
-export type Candidate = Played &
-  (
-    | { kind: "album"; album: Play["track"]["album"] }
-    | { kind: "playlist" }
-    | { kind: "likedSongs" }
-  );
+import type { Play, SpotifyImage } from "../types/spotify.ts";
+import type { Candidate } from "../types/recents.ts";
 
 export function candidates(plays: Play[]): Candidate[] {
   const seen = new Set<string>();
@@ -42,6 +20,12 @@ export function candidates(plays: Play[]): Candidate[] {
     }
   }
   return result;
+}
+
+export function newestFirst(plays: Play[]): Play[] {
+  return [...plays].sort(
+    (a, b) => Date.parse(b.played_at) - Date.parse(a.played_at),
+  );
 }
 
 export function albumLabel(albumType: string) {
