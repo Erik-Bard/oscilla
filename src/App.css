@@ -208,6 +208,16 @@ button:focus-visible {
   text-shadow: 0 0 20px rgb(124 131 255 / 0.45);
 }
 
+.topbar-title {
+  min-width: 0;
+  margin-right: auto;
+  overflow: hidden;
+  font-size: 20px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .account-button {
   anchor-name: --account;
   display: flex;
@@ -1160,6 +1170,7 @@ button:focus-visible {
   .equalizer i,
   .player,
   .tracklist-page,
+  .refreshing svg,
   .skeleton-block {
     animation: none;
   }
@@ -1211,6 +1222,31 @@ button:focus-visible {
   anchor-name: --new-playlist;
   border: 1px solid var(--line);
   background: var(--surface);
+}
+
+.library-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.refresh-button {
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.refresh-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.refreshing svg {
+  animation: spin 900ms linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .new-playlist-menu {

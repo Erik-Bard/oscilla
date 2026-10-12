@@ -61,6 +61,21 @@ export function ShuffleIcon({ size = 18 }: IconProps) {
   );
 }
 
+export function RefreshIcon({ size = 18 }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true">
+      <path
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M20 11a8 8 0 1 0-2.3 6.3M20 4v7h-7"
+      />
+    </svg>
+  );
+}
+
 export function BackIcon({ size = 18 }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true">

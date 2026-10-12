@@ -18,10 +18,19 @@ import { NowPlayingBar } from "../components/NowPlayingBar";
 import { LibraryPage } from "./LibraryPage";
 import { TracklistPage } from "./TracklistPage";
 import { usePlayer } from "../context/player";
+import {
+  forgetCachedNotOpenedSince,
+  libraryKey,
+  readCached,
+  writeCached,
+} from "../utils/cache";
+import { KEEP_UNOPENED_FOR_MS } from "../utils/freshness";
+import { freshLibrary } from "../utils/loadLibrary";
 import { spotifyFetch } from "../utils/spotify";
 import { useFocusedLoad } from "../hooks/useFocusedLoad";
 import type { Play, SpotifyImage } from "../types/spotify";
 import type { Candidate } from "../types/recents";
+import type { LibraryItem } from "../types/library";
 import type { Listener } from "../types/session";
 
 const RECENT_COUNT = 5;
@@ -45,9 +54,39 @@ type Playlist = {
   owner: { id: string; display_name: string | null };
 };
 
+const playlistsSeenThisSession = new Map<string, Promise<Playlist | null>>();
+
+async function fetchPlaylist(id: string): Promise<Playlist | null> {
+  const res = await spotifyFetch(
+    `/playlists/${id}?fields=name,images,collaborative,owner(id,display_name)`,
+  );
+  if (res.status === 403 || res.status === 404) return null;
+  if (!res.ok) throw new Error(`playlist ${res.status}`);
+  return res.json();
+}
+
+async function rememberedOrFetchedPlaylist(id: string) {
+  const remembered = await readCached<Playlist | null>(`lookup:${id}`);
+  if (remembered) return remembered.value;
+  const playlist = await fetchPlaylist(id);
+  void writeCached(`lookup:${id}`, playlist);
+  return playlist;
+}
+
+function lookUpPlaylist(id: string) {
+  let lookup = playlistsSeenThisSession.get(id);
+  if (!lookup) {
+    lookup = rememberedOrFetchedPlaylist(id);
+    lookup.catch(() => playlistsSeenThisSession.delete(id));
+    playlistsSeenThisSession.set(id, lookup);
+  }
+  return lookup;
+}
+
 async function resolve(
   candidate: Candidate,
   listener: Listener,
+  library: LibraryItem[],
 ): Promise<Recent | null> {
   const base = {
     uri: candidate.uri,
@@ -73,14 +112,20 @@ async function resolve(
         likedSongs: true,
       };
     case "playlist": {
-      const id = candidate.uri.split(":").pop();
-      const res = await spotifyFetch(
-        `/playlists/${id}?fields=name,images,collaborative,owner(id,display_name)`,
-      );
-      if (res.status === 403 || res.status === 404) return null;
-      if (!res.ok) throw new Error(`playlist ${res.status}`);
-      const playlist: Playlist = await res.json();
-      if (playlist.owner.id !== listener.id && !playlist.collaborative)
+      const inLibrary = library.find((item) => item.uri === candidate.uri);
+      if (inLibrary)
+        return {
+          ...base,
+          name: inLibrary.name,
+          label: `${inLibrary.typeLabel} · ${inLibrary.by}`,
+          imageUrl: inLibrary.imageUrl,
+          likedSongs: false,
+        };
+      const playlist = await lookUpPlaylist(candidate.uri.split(":").pop()!);
+      if (
+        !playlist ||
+        (playlist.owner.id !== listener.id && !playlist.collaborative)
+      )
         return null;
       return {
         ...base,
@@ -133,10 +178,14 @@ async function loadRecents(listener: Listener): Promise<Recent[]> {
   const queue = candidates(
     newestFirst([...(await rememberCurrentPlay()), ...items]),
   );
+  const library =
+    (await readCached<LibraryItem[]>(libraryKey(listener.id)))?.value ?? [];
   const recents: Recent[] = [];
   while (queue.length && recents.length < RECENT_COUNT) {
     const batch = queue.splice(0, RECENT_COUNT - recents.length);
-    const resolved = await Promise.all(batch.map((c) => resolve(c, listener)));
+    const resolved = await Promise.all(
+      batch.map((c) => resolve(c, listener, library)),
+    );
     recents.push(...resolved.filter((r) => r !== null));
   }
   return recents;
@@ -267,10 +316,18 @@ export function Home({
   const [view, setView] = useState<View>("home");
   const [openUri, setOpenUri] = useState<string | null>(null);
   const [libraryVisited, setLibraryVisited] = useState(false);
+  const [scrolledPastTitle, setScrolledPastTitle] = useState<string | null>(
+    null,
+  );
   const scroller = useRef<HTMLDivElement>(null);
   const listScroll = useRef(0);
   const firstName = listener.displayName.split(" ")[0];
   if (view === "library" && !libraryVisited) setLibraryVisited(true);
+
+  useEffect(() => {
+    void forgetCachedNotOpenedSince(Date.now() - KEEP_UNOPENED_FOR_MS);
+    freshLibrary(listener).catch(() => {});
+  }, [listener]);
 
   useEffect(() => {
     const onPop = (event: PopStateEvent) => {
@@ -313,7 +370,11 @@ export function Home({
             <BackIcon />
           </button>
         )}
-        <span className="topbar-wordmark">oscilla</span>
+        {scrolledPastTitle ? (
+          <span className="topbar-title">{scrolledPastTitle}</span>
+        ) : (
+          <span className="topbar-wordmark">oscilla</span>
+        )}
         <nav className="nav-pills" aria-label="Main">
           {(["home", "library"] as const).map((target) => (
             <button
@@ -348,7 +409,12 @@ export function Home({
       </header>
       <div className="home-scroll" ref={scroller}>
         {openUri && (
-          <TracklistPage key={openUri} uri={openUri} listener={listener} />
+          <TracklistPage
+            key={openUri}
+            uri={openUri}
+            listener={listener}
+            onHeroTitleHidden={setScrolledPastTitle}
+          />
         )}
         <section
           className="home-column"
@@ -374,6 +440,7 @@ export function Home({
                 <p className="notice-detail">
                   Check your connection, then try again.
                 </p>
+                <p className="notice-detail">{state.reason}</p>
                 <button className="ghost-button" onClick={retry}>
                   Retry
                 </button>

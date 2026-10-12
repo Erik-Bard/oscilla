@@ -11,55 +11,21 @@ import {
   HeartIcon,
   PauseIcon,
   PlayIcon,
+  RefreshIcon,
 } from "../components/icons";
 import { usePlayer } from "../context/player";
-import { API_ROOT, getJson } from "../utils/spotify";
 import {
-  albumTracks,
-  formatDuration,
-  formatTotal,
-  fromAlbum,
-  fromPlaylist,
-  fromSavedTracks,
-  playlistTracks,
-  savedTracks,
-} from "../utils/tracklist";
-import type {
-  ApiAlbum,
-  ApiPage,
-  ApiPlaylist,
-  ApiSavedTracks,
-} from "../types/spotify";
+  isUnavailable,
+  loadMore,
+  openTracklist,
+  refreshTracklist,
+  rememberTracklist,
+} from "../utils/loadTracklist";
+import { formatDuration, formatTotal } from "../utils/tracklist";
 import type { Tracklist } from "../types/tracklist";
 import type { Listener } from "../types/session";
 
 const FALLBACK_TINT = "#4338ca";
-
-function loadTracklist(uri: string, listener: Listener): Promise<Tracklist> {
-  const id = uri.split(":").pop();
-  if (uri.endsWith(":collection"))
-    return getJson<ApiSavedTracks>(
-      "/me/tracks?limit=50&market=from_token",
-    ).then((page) => fromSavedTracks(page, listener.displayName));
-  if (uri.startsWith("spotify:album:"))
-    return getJson<ApiAlbum>(`/albums/${id}?market=from_token`).then(fromAlbum);
-  return getJson<ApiPlaylist>(`/playlists/${id}?market=from_token`).then(
-    fromPlaylist,
-  );
-}
-
-async function loadMore(list: Tracklist): Promise<Tracklist> {
-  if (!list.next) return list;
-  const page = await getJson<ApiPage<never>>(list.next.replace(API_ROOT, ""));
-  const offset = list.tracks.length;
-  const more =
-    list.kind === "album"
-      ? albumTracks(page, offset)
-      : list.kind === "playlist"
-        ? playlistTracks(page, offset)
-        : savedTracks(page, offset);
-  return { ...list, tracks: [...list.tracks, ...more], next: page.next };
-}
 
 function useCoverTint(imageUrl: string | null) {
   const [tint, setTint] = useState(FALLBACK_TINT);
@@ -88,27 +54,6 @@ function useCoverTint(imageUrl: string | null) {
   return imageUrl ? tint : FALLBACK_TINT;
 }
 
-function useOwnerImage(list: Tracklist | null, listener: Listener) {
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const ownerId = list?.ownerId;
-  useEffect(() => {
-    if (!ownerId) return;
-    let cancelled = false;
-    getJson<{ images: { url: string }[] }>(`/users/${ownerId}`).then(
-      (user) => {
-        if (!cancelled)
-          setImageUrl(user.images[user.images.length - 1]?.url ?? null);
-      },
-      () => {},
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [ownerId]);
-  if (list?.kind === "likedSongs") return listener.imageUrl;
-  return ownerId ? imageUrl : null;
-}
-
 type PageState =
   | { status: "loading" }
   | { status: "error"; unavailable: boolean }
@@ -123,42 +68,61 @@ const dateAdded = new Intl.DateTimeFormat("en-US", {
 export function TracklistPage({
   uri,
   listener,
+  onHeroTitleHidden,
 }: {
   uri: string;
   listener: Listener;
+  onHeroTitleHidden: (name: string | null) => void;
 }) {
   const [state, setState] = useState<PageState>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
+  const [checking, setChecking] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [selected, setSelected] = useState(0);
   const loadingMore = useRef(false);
   const sentinel = useRef<HTMLDivElement>(null);
   const rows = useRef<(HTMLDivElement | null)[]>([]);
+  const heroTitle = useRef<HTMLHeadingElement>(null);
   const player = usePlayer();
   const list = state.status === "ready" ? state.list : null;
   const tint = useCoverTint(list?.imageUrl ?? null);
-  const ownerImage = useOwnerImage(list, listener);
+  const ownedByListener =
+    list?.kind === "likedSongs" || list?.ownerId === listener.id;
+  const ownerImage = ownedByListener ? listener.imageUrl : null;
 
   useEffect(() => {
     let cancelled = false;
-    loadTracklist(uri, listener).then(
-      (loaded) => {
-        if (!cancelled) setState({ status: "ready", list: loaded });
-      },
-      (error: Error) => {
+    openTracklist(uri, listener, (opened) => {
+      if (!cancelled) setState({ status: "ready", list: opened });
+    })
+      .catch((error: unknown) => {
         if (!cancelled)
-          setState({
-            status: "error",
-            unavailable: error.message === "403" || error.message === "404",
-          });
-      },
-    );
+          setState({ status: "error", unavailable: isUnavailable(error) });
+      })
+      .finally(() => {
+        if (!cancelled) setChecking(false);
+      });
     return () => {
       cancelled = true;
     };
   }, [uri, listener, attempt]);
 
   useEffect(() => {
-    if (!list?.next || !sentinel.current) return;
+    if (list) rememberTracklist(uri, list);
+  }, [uri, list]);
+
+  const refresh = () => {
+    setRefreshing(true);
+    refreshTracklist(uri, listener)
+      .then(
+        (fresh) => setState({ status: "ready", list: fresh }),
+        () => {},
+      )
+      .finally(() => setRefreshing(false));
+  };
+
+  useEffect(() => {
+    if (checking || refreshing || !list?.next || !sentinel.current) return;
     const observer = new IntersectionObserver(([entry]) => {
       if (!entry.isIntersecting || loadingMore.current) return;
       loadingMore.current = true;
@@ -169,7 +133,20 @@ export function TracklistPage({
     });
     observer.observe(sentinel.current);
     return () => observer.disconnect();
-  }, [list]);
+  }, [list, checking, refreshing]);
+
+  const name = list?.name;
+  useEffect(() => {
+    if (!name || !heroTitle.current) return;
+    const observer = new IntersectionObserver(([entry]) =>
+      onHeroTitleHidden(entry.isIntersecting ? null : name),
+    );
+    observer.observe(heroTitle.current);
+    return () => {
+      observer.disconnect();
+      onHeroTitleHidden(null);
+    };
+  }, [name, onHeroTitleHidden]);
 
   if (state.status === "error")
     return (
@@ -185,6 +162,7 @@ export function TracklistPage({
               className="ghost-button"
               onClick={() => {
                 setState({ status: "loading" });
+                setChecking(true);
                 setAttempt(attempt + 1);
               }}
             >
@@ -249,7 +227,9 @@ export function TracklistPage({
           )}
           <div className="hero-info">
             <p className="hero-type">{list.typeLabel}</p>
-            <h1 className="hero-title">{list.name}</h1>
+            <h1 className="hero-title" ref={heroTitle}>
+              {list.name}
+            </h1>
             <p className="hero-meta">
               <span className="hero-owner">
                 {ownerImage && (
@@ -275,6 +255,18 @@ export function TracklistPage({
           >
             {isPlaying ? <PauseIcon size={24} /> : <PlayIcon size={24} />}
           </button>
+          {!isAlbum && (
+            <button
+              className={`icon-button refresh-button${refreshing ? " refreshing" : ""}`}
+              aria-label={`Refresh ${list.name}`}
+              aria-busy={refreshing}
+              title="Refresh"
+              disabled={refreshing}
+              onClick={refresh}
+            >
+              <RefreshIcon />
+            </button>
+          )}
         </div>
         {list.tracksHidden ? (
           <p className="notice">

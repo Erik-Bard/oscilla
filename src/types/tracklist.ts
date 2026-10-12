@@ -22,4 +22,6 @@ export type Tracklist = {
   tracks: Track[];
   next: string | null;
   tracksHidden?: boolean;
+  snapshotId?: string;
+  fetchedAt?: number;
 };

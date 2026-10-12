@@ -5,28 +5,24 @@ import {
   PauseIcon,
   PlayIcon,
   PlusIcon,
+  RefreshIcon,
   SearchIcon,
 } from "../components/icons";
-import { libraryItems, likedSongsUri, matches } from "../utils/library";
+import { likedSongsUri, matches } from "../utils/library";
 import { usePlayer } from "../context/player";
-import { API_ROOT, getJson, spotifyFetch } from "../utils/spotify";
+import { libraryKey, readCached } from "../utils/cache";
+import { freshLibrary } from "../utils/loadLibrary";
 import {
-  formatDuration,
-  fromSavedTracks,
-  savedTracks,
-} from "../utils/tracklist";
-import { useFocusedLoad } from "../hooks/useFocusedLoad";
-import type {
-  ApiLibraryPlaylist,
-  ApiPage,
-  ApiSavedAlbum,
-  ApiSavedTracks,
-} from "../types/spotify";
+  loadMore,
+  openTracklist,
+  refreshTracklist,
+  rememberTracklist,
+} from "../utils/loadTracklist";
+import { spotifyFetch } from "../utils/spotify";
+import { formatDuration } from "../utils/tracklist";
 import type { LibraryItem } from "../types/library";
 import type { Tracklist } from "../types/tracklist";
 import type { Listener } from "../types/session";
-
-const PAGE = 50;
 
 type Filter = LibraryItem["kind"] | "all";
 
@@ -36,27 +32,6 @@ const FILTERS: [Filter, string][] = [
   ["album", "Albums"],
   ["likedSongs", "Liked Songs"],
 ];
-
-async function loadAll<T>(path: string): Promise<T[]> {
-  const first = await getJson<ApiPage<T>>(`${path}?limit=${PAGE}`);
-  const offsets = [];
-  for (let offset = PAGE; offset < first.total; offset += PAGE)
-    offsets.push(offset);
-  const rest = await Promise.all(
-    offsets.map((offset) =>
-      getJson<ApiPage<T>>(`${path}?limit=${PAGE}&offset=${offset}`),
-    ),
-  );
-  return [first, ...rest].flatMap((page) => page.items);
-}
-
-async function loadLibrary(listener: Listener) {
-  const [playlists, albums] = await Promise.all([
-    loadAll<ApiLibraryPlaylist>("/me/playlists"),
-    loadAll<ApiSavedAlbum>("/me/albums"),
-  ]);
-  return libraryItems(listener, playlists, albums);
-}
 
 function CoverRow({
   name,
@@ -179,9 +154,13 @@ function Items({
 function LikedSongs({
   listener,
   query,
+  refreshRequests,
+  onRefreshed,
 }: {
   listener: Listener;
   query: string;
+  refreshRequests: number;
+  onRefreshed: () => void;
 }) {
   const uri = likedSongsUri(listener);
   const [list, setList] = useState<Tracklist | null>(null);
@@ -193,11 +172,23 @@ function LikedSongs({
   const next = list?.next;
 
   useEffect(() => {
-    getJson<ApiSavedTracks>(`/me/tracks?limit=${PAGE}&market=from_token`).then(
-      (page) => setList(fromSavedTracks(page, listener.displayName)),
-      () => setFailed(true),
-    );
-  }, [listener]);
+    let cancelled = false;
+    const show = (opened: Tracklist) => {
+      if (!cancelled) setList(opened);
+    };
+    (refreshRequests
+      ? refreshTracklist(uri, listener).then(show).finally(onRefreshed)
+      : openTracklist(uri, listener, show)
+    ).catch(() => setFailed(true));
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uri, listener, refreshRequests]);
+
+  useEffect(() => {
+    if (list) rememberTracklist(uri, list);
+  }, [uri, list]);
 
   useEffect(() => {
     if (!sentinel.current) return;
@@ -209,31 +200,20 @@ function LikedSongs({
   }, [next]);
 
   useEffect(() => {
-    if (!next || !(nearEnd || searching)) return;
+    if (!list?.next || !(nearEnd || searching)) return;
     let cancelled = false;
-    getJson<ApiSavedTracks>(next.replace(API_ROOT, "")).then(
-      (page) => {
-        if (!cancelled)
-          setList(
-            (prev) =>
-              prev && {
-                ...prev,
-                tracks: [
-                  ...prev.tracks,
-                  ...savedTracks(page, prev.tracks.length),
-                ],
-                next: page.next,
-              },
-          );
+    loadMore(list).then(
+      (more) => {
+        if (!cancelled) setList(more);
       },
       () => {},
     );
     return () => {
       cancelled = true;
     };
-  }, [next, nearEnd, searching]);
+  }, [list, nearEnd, searching]);
 
-  if (failed)
+  if (failed && !list)
     return (
       <p className="notice-error" role="alert">
         Couldn't load your Liked Songs.
@@ -362,13 +342,45 @@ export function LibraryPage({
   hidden: boolean;
   onOpen: (uri: string) => void;
 }) {
-  const { state, retry, refresh } = useFocusedLoad(
-    () => loadLibrary(listener),
-    listener,
-  );
+  const [items, setItems] = useState<LibraryItem[] | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [likedRefreshRequests, setLikedRefreshRequests] = useState(0);
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
   const search = useRef<HTMLInputElement>(null);
+
+  const load = (again: boolean) => {
+    setFailure(null);
+    return freshLibrary(listener, again).then(setItems, (error: unknown) =>
+      setFailure(String(error)),
+    );
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    void readCached<LibraryItem[]>(libraryKey(listener.id)).then((cached) => {
+      if (!cancelled && cached) setItems((shown) => shown ?? cached.value);
+    });
+    freshLibrary(listener).then(
+      (fresh) => {
+        if (!cancelled) setItems(fresh);
+      },
+      (error: unknown) => {
+        if (!cancelled) setFailure(String(error));
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [listener]);
+
+  const refresh = () => {
+    setRefreshing(true);
+    if (filter === "likedSongs")
+      return setLikedRefreshRequests(likedRefreshRequests + 1);
+    void load(true).finally(() => setRefreshing(false));
+  };
 
   useEffect(() => {
     if (hidden) return;
@@ -382,14 +394,11 @@ export function LibraryPage({
     return () => window.removeEventListener("keydown", onKey);
   }, [hidden]);
 
-  const items =
-    state.status === "ready"
-      ? state.value.filter(
-          (item) =>
-            (filter === "all" || item.kind === filter) &&
-            matches(query, item.name, item.by),
-        )
-      : [];
+  const shown = (items ?? []).filter(
+    (item) =>
+      (filter === "all" || item.kind === filter) &&
+      matches(query, item.name, item.by),
+  );
 
   return (
     <section
@@ -401,12 +410,28 @@ export function LibraryPage({
         <h1 id="library-heading" className="home-heading">
           Library
         </h1>
-        <NewPlaylist
-          onCreated={(uri) => {
-            refresh();
-            onOpen(uri);
-          }}
-        />
+        <div className="library-actions">
+          <button
+            className={`icon-button refresh-button${refreshing ? " refreshing" : ""}`}
+            aria-label={
+              filter === "likedSongs"
+                ? "Refresh Liked Songs"
+                : "Refresh Library"
+            }
+            aria-busy={refreshing}
+            title="Refresh"
+            disabled={refreshing}
+            onClick={refresh}
+          >
+            <RefreshIcon />
+          </button>
+          <NewPlaylist
+            onCreated={(uri) => {
+              void load(true);
+              onOpen(uri);
+            }}
+          />
+        </div>
       </div>
       <label className="search-field">
         <SearchIcon />
@@ -426,29 +451,38 @@ export function LibraryPage({
             key={value}
             className="chip"
             aria-pressed={filter === value}
-            onClick={() => setFilter(value)}
+            onClick={() => {
+              setFilter(value);
+              setLikedRefreshRequests(0);
+            }}
           >
             {label}
           </button>
         ))}
       </div>
-      <div aria-live="polite" aria-busy={state.status === "loading"}>
+      <div aria-live="polite" aria-busy={!items && !failure}>
         {filter === "likedSongs" ? (
-          <LikedSongs listener={listener} query={query} />
-        ) : state.status === "loading" ? (
+          <LikedSongs
+            listener={listener}
+            query={query}
+            refreshRequests={likedRefreshRequests}
+            onRefreshed={() => setRefreshing(false)}
+          />
+        ) : items ? (
+          <Items items={shown} query={query.trim()} onOpen={onOpen} />
+        ) : !failure ? (
           <SkeletonRows />
-        ) : state.status === "error" ? (
+        ) : (
           <div className="notice" role="alert">
             <p className="notice-error">Couldn't load your Library.</p>
             <p className="notice-detail">
               Check your connection, then try again.
             </p>
-            <button className="ghost-button" onClick={retry}>
+            <p className="notice-detail">{failure}</p>
+            <button className="ghost-button" onClick={() => void load(false)}>
               Retry
             </button>
           </div>
-        ) : (
-          <Items items={items} query={query.trim()} onOpen={onOpen} />
         )}
       </div>
     </section>

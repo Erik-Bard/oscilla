@@ -7,6 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { wipeCache } from "../utils/cache";
 import type { Listener } from "../types/session";
 
 type SessionState =
@@ -37,9 +38,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         ),
       (error: string) => setState({ status: "signedOut", error }),
     );
-    const unlisten = listen<string>("session-ended", (e) =>
-      setState({ status: "signedOut", error: e.payload }),
-    );
+    const unlisten = listen<string>("session-ended", (e) => {
+      void wipeCache();
+      setState({ status: "signedOut", error: e.payload });
+    });
     return () => void unlisten.then((f) => f());
   }, []);
 
@@ -54,6 +56,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     },
     cancelSignIn: () => void invoke("cancel_sign_in"),
     signOut: () => {
+      void wipeCache();
       void invoke("sign_out").finally(() => setState({ status: "signedOut" }));
     },
   };

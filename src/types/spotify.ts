@@ -64,6 +64,7 @@ export type ApiAlbum = {
 
 export type ApiPlaylist = {
   name: string;
+  snapshot_id?: string;
   public: boolean | null;
   images: SpotifyImage[] | null;
   owner: { id: string; display_name: string | null };

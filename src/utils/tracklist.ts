@@ -77,6 +77,7 @@ export function fromPlaylist(playlist: ApiPlaylist): Tracklist {
     tracks: page ? playlistTracks(page, 0) : [],
     next: page?.next ?? null,
     tracksHidden: !page,
+    snapshotId: playlist.snapshot_id,
   };
 }
 
