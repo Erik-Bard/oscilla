@@ -12,6 +12,8 @@ export function candidates(plays: Play[]): Candidate[] {
       result.push({ ...played, kind: "album", album: track.album });
     } else if (context.type === "playlist") {
       result.push({ ...played, kind: "playlist" });
+    } else if (context.type === "artist") {
+      result.push({ ...played, kind: "artist" });
     } else if (
       context.type === "collection" ||
       context.uri.endsWith(":collection")

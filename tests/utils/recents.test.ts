@@ -45,6 +45,7 @@ assert.deepEqual(
   result.map((c) => [c.kind, c.uri, c.playedAt]),
   [
     ["playlist", focus.uri, "2026-10-07T12:00:00Z"],
+    ["artist", artist.uri, "2026-10-07T11:40:00Z"],
     ["album", blonde.uri, "2026-10-07T11:30:00Z"],
     ["likedSongs", liked.uri, "2026-10-07T11:20:00Z"],
   ],

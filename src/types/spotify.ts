@@ -12,8 +12,20 @@ export type ApiSavedAlbum = {
     name: string;
     album_type: string;
     images: SpotifyImage[];
-    artists: { name: string }[];
+    artists: ApiArtistRef[];
   };
+};
+
+export type ApiArtistRef = { name: string; uri?: string | null };
+
+export type ApiArtist = { uri: string; name: string; images: SpotifyImage[] };
+
+export type ApiArtistAlbum = {
+  uri: string;
+  name: string;
+  album_type: string;
+  release_date: string;
+  images: SpotifyImage[];
 };
 
 export type SpotifyImage = { url: string; width: number | null };
@@ -27,7 +39,7 @@ export type Play = {
       name: string;
       album_type: string;
       images: SpotifyImage[];
-      artists: { name: string }[];
+      artists: ApiArtistRef[];
     };
   };
 };
@@ -38,7 +50,7 @@ export type ApiTrack = {
   duration_ms: number;
   is_playable?: boolean;
   is_local?: boolean;
-  artists?: { name: string }[];
+  artists?: ApiArtistRef[];
   show?: { name: string };
   album?: { name: string; images: SpotifyImage[] };
   images?: SpotifyImage[];
@@ -58,7 +70,7 @@ export type ApiAlbum = {
   album_type: string;
   release_date: string;
   images: SpotifyImage[];
-  artists: { name: string }[];
+  artists: ApiArtistRef[];
   tracks: ApiPage<ApiTrack>;
 };
 

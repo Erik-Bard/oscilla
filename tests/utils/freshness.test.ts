@@ -17,7 +17,7 @@ const track = (uri: string, addedAt: string | null = null): Track => ({
   key: uri,
   uri,
   name: uri,
-  artists: "",
+  artists: [],
   album: null,
   imageUrl: null,
   addedAt,

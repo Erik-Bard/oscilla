@@ -1,13 +1,26 @@
 import { albumLabel, coverUrl } from "./recents.ts";
 import type {
   ApiAlbum,
+  ApiArtistRef,
   ApiPage,
   ApiPlaylist,
   ApiSavedTracks,
   ApiTrack,
   PlaylistEntry,
 } from "../types/spotify.ts";
-import type { Track, Tracklist } from "../types/tracklist.ts";
+import type { Credit, Track, Tracklist } from "../types/tracklist.ts";
+
+export function credits(artists: ApiArtistRef[]): Credit[] {
+  return artists.map((a) => ({ name: a.name, uri: a.uri ?? null }));
+}
+
+export function isArtistUri(uri: string | null): uri is string {
+  return !!uri?.startsWith("spotify:artist:");
+}
+
+export function creditNames(artists: Credit[]) {
+  return artists.map((a) => a.name).join(", ");
+}
 
 function toTrack(
   track: ApiTrack,
@@ -19,14 +32,36 @@ function toTrack(
     key: `${index}:${track.uri}`,
     uri: track.uri,
     name: track.name,
-    artists:
-      track.artists?.map((a) => a.name).join(", ") || track.show?.name || "",
+    artists: track.artists?.length
+      ? credits(track.artists)
+      : track.show
+        ? [{ name: track.show.name, uri: null }]
+        : [],
     album: track.album?.name ?? null,
     imageUrl: coverUrl(track.album?.images ?? track.images ?? []),
     addedAt,
     durationMs: track.duration_ms,
     playable: !isLocal && !track.is_local && track.is_playable !== false,
   };
+}
+
+export function popularTracks(
+  pages: ApiPage<ApiTrack>[],
+  artistUri: string,
+  count: number,
+) {
+  const names = new Set<string>();
+  return pages
+    .flatMap((page) => page.items)
+    .filter((track) => {
+      const byArtist = track.artists?.some((a) => a.uri === artistUri);
+      const name = track.name.toLowerCase();
+      if (!byArtist || names.has(name)) return false;
+      names.add(name);
+      return true;
+    })
+    .slice(0, count)
+    .map((track, i) => toTrack(track, null, i));
 }
 
 export function albumTracks(page: ApiPage<ApiTrack>, offset: number) {
@@ -54,6 +89,7 @@ export function fromAlbum(album: ApiAlbum): Tracklist {
     typeLabel: albumLabel(album.album_type),
     name: album.name,
     owner: album.artists.map((a) => a.name).join(", "),
+    artists: credits(album.artists),
     ownerId: null,
     year: album.release_date.slice(0, 4),
     imageUrl: coverUrl(album.images),

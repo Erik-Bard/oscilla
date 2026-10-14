@@ -15,8 +15,11 @@ import {
   ShuffleIcon,
 } from "../components/icons";
 import { NowPlayingBar } from "../components/NowPlayingBar";
+import { ArtistPage } from "./ArtistPage";
 import { LibraryPage } from "./LibraryPage";
 import { TracklistPage } from "./TracklistPage";
+import { credits, isArtistUri } from "../utils/tracklist";
+import { ArtistLinks } from "../components/ArtistLinks";
 import { usePlayer } from "../context/player";
 import {
   forgetCachedNotOpenedSince,
@@ -26,12 +29,13 @@ import {
 } from "../utils/cache";
 import { KEEP_UNOPENED_FOR_MS } from "../utils/freshness";
 import { freshLibrary } from "../utils/loadLibrary";
-import { spotifyFetch } from "../utils/spotify";
+import { getJson, spotifyFetch } from "../utils/spotify";
 import { useFocusedLoad } from "../hooks/useFocusedLoad";
-import type { Play, SpotifyImage } from "../types/spotify";
+import type { ApiArtist, Play, SpotifyImage } from "../types/spotify";
 import type { Candidate } from "../types/recents";
 import type { LibraryItem } from "../types/library";
 import type { Listener } from "../types/session";
+import type { Credit } from "../types/tracklist";
 
 const RECENT_COUNT = 5;
 
@@ -42,8 +46,10 @@ type Recent = {
   uri: string;
   name: string;
   label: string;
+  artists: Credit[];
   imageUrl: string | null;
   likedSongs: boolean;
+  artist: boolean;
   playedAt: string;
 };
 
@@ -91,6 +97,9 @@ async function resolve(
   const base = {
     uri: candidate.uri,
     playedAt: candidate.playedAt,
+    likedSongs: false,
+    artist: false,
+    artists: [],
   };
   switch (candidate.kind) {
     case "album": {
@@ -98,9 +107,22 @@ async function resolve(
       return {
         ...base,
         name: album.name,
-        label: `${albumLabel(album.album_type)} · ${album.artists.map((a) => a.name).join(", ")}`,
+        label: albumLabel(album.album_type),
+        artists: credits(album.artists),
         imageUrl: coverUrl(album.images),
-        likedSongs: false,
+      };
+    }
+    case "artist": {
+      const artist = await getJson<ApiArtist>(
+        `/artists/${candidate.uri.split(":").pop()}`,
+      ).catch(() => null);
+      if (!artist) return null;
+      return {
+        ...base,
+        name: artist.name,
+        label: "Artist",
+        imageUrl: coverUrl(artist.images),
+        artist: true,
       };
     }
     case "likedSongs":
@@ -119,7 +141,6 @@ async function resolve(
           name: inLibrary.name,
           label: `${inLibrary.typeLabel} · ${inLibrary.by}`,
           imageUrl: inLibrary.imageUrl,
-          likedSongs: false,
         };
       const playlist = await lookUpPlaylist(candidate.uri.split(":").pop()!);
       if (
@@ -132,7 +153,6 @@ async function resolve(
         name: playlist.name,
         label: `Playlist · ${playlist.owner.display_name ?? "Spotify"}`,
         imageUrl: coverUrl(playlist.images ?? []),
-        likedSongs: false,
       };
     }
   }
@@ -260,9 +280,15 @@ function RecentList({
                   <HeartIcon />
                 </span>
               ) : recent.imageUrl ? (
-                <img className="cover" src={recent.imageUrl} alt="" />
+                <img
+                  className={`cover${recent.artist ? " artist-cover" : ""}`}
+                  src={recent.imageUrl}
+                  alt=""
+                />
               ) : (
-                <span className="cover" />
+                <span
+                  className={`cover${recent.artist ? " artist-cover" : ""}`}
+                />
               )}
               <span className="cover-overlay">
                 <span>
@@ -275,7 +301,15 @@ function RecentList({
                 {current && <Equalizer />}
                 {recent.name}
               </span>
-              <span className="recent-label">{recent.label}</span>
+              <span className="recent-label">
+                {recent.label}
+                {recent.artists.length > 0 && (
+                  <>
+                    {" · "}
+                    <ArtistLinks artists={recent.artists} onOpen={onOpen} />
+                  </>
+                )}
+              </span>
             </span>
             <span className="recent-when">{playedAgo(recent.playedAt)}</span>
           </li>
@@ -345,6 +379,7 @@ export function Home({
   }, [openUri, view]);
 
   const open = (uri: string) => {
+    if (uri === openUri) return;
     listScroll.current = scroller.current?.scrollTop ?? 0;
     history.pushState({ view, uri } satisfies Place, "");
     setOpenUri(uri);
@@ -408,14 +443,23 @@ export function Home({
         </div>
       </header>
       <div className="home-scroll" ref={scroller}>
-        {openUri && (
-          <TracklistPage
-            key={openUri}
-            uri={openUri}
-            listener={listener}
-            onHeroTitleHidden={setScrolledPastTitle}
-          />
-        )}
+        {openUri &&
+          (isArtistUri(openUri) ? (
+            <ArtistPage
+              key={openUri}
+              uri={openUri}
+              onOpen={open}
+              onHeroTitleHidden={setScrolledPastTitle}
+            />
+          ) : (
+            <TracklistPage
+              key={openUri}
+              uri={openUri}
+              listener={listener}
+              onOpen={open}
+              onHeroTitleHidden={setScrolledPastTitle}
+            />
+          ))}
         <section
           className="home-column"
           aria-labelledby="recents-heading"
@@ -458,7 +502,7 @@ export function Home({
           />
         )}
       </div>
-      <NowPlayingBar />
+      <NowPlayingBar onOpen={open} />
     </div>
   );
 }

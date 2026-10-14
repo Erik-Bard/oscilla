@@ -25,3 +25,18 @@ dist-ssr
 
 # Build-time secrets
 .env
+
+# Locally installed agent skills (restore with `npx skills`)
+/.agents/skills/grill-me
+/.agents/skills/grilling
+/.agents/skills/implement-spec
+/.agents/skills/setup-matt-pocock-skills
+/.agents/skills/ui-ux-pro-max
+/.claude/skills/grill-me
+/.claude/skills/grilling
+/.claude/skills/implement-spec
+/.claude/skills/setup-matt-pocock-skills
+/.claude/skills/ui-ux-pro-max
+/.scratch/*
+/docs
+/design-system

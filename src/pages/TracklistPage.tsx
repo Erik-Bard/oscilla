@@ -13,7 +13,9 @@ import {
   PlayIcon,
   RefreshIcon,
 } from "../components/icons";
+import { ArtistLinks } from "../components/ArtistLinks";
 import { usePlayer } from "../context/player";
+import { useCoverTint, useHeroTitle } from "../hooks/hero";
 import {
   isUnavailable,
   loadMore,
@@ -24,35 +26,6 @@ import {
 import { formatDuration, formatTotal } from "../utils/tracklist";
 import type { Tracklist } from "../types/tracklist";
 import type { Listener } from "../types/session";
-
-const FALLBACK_TINT = "#4338ca";
-
-function useCoverTint(imageUrl: string | null) {
-  const [tint, setTint] = useState(FALLBACK_TINT);
-  useEffect(() => {
-    if (!imageUrl) return;
-    const image = new Image();
-    image.crossOrigin = "anonymous";
-    image.onload = () => {
-      try {
-        const canvas = document.createElement("canvas");
-        canvas.width = canvas.height = 1;
-        const context = canvas.getContext("2d");
-        if (!context) return;
-        context.drawImage(image, 0, 0, 1, 1);
-        const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
-        setTint(`rgb(${r} ${g} ${b})`);
-      } catch {
-        setTint(FALLBACK_TINT);
-      }
-    };
-    image.src = imageUrl;
-    return () => {
-      image.onload = null;
-    };
-  }, [imageUrl]);
-  return imageUrl ? tint : FALLBACK_TINT;
-}
 
 type PageState =
   | { status: "loading" }
@@ -68,10 +41,12 @@ const dateAdded = new Intl.DateTimeFormat("en-US", {
 export function TracklistPage({
   uri,
   listener,
+  onOpen,
   onHeroTitleHidden,
 }: {
   uri: string;
   listener: Listener;
+  onOpen: (uri: string) => void;
   onHeroTitleHidden: (name: string | null) => void;
 }) {
   const [state, setState] = useState<PageState>({ status: "loading" });
@@ -82,10 +57,10 @@ export function TracklistPage({
   const loadingMore = useRef(false);
   const sentinel = useRef<HTMLDivElement>(null);
   const rows = useRef<(HTMLDivElement | null)[]>([]);
-  const heroTitle = useRef<HTMLHeadingElement>(null);
   const player = usePlayer();
   const list = state.status === "ready" ? state.list : null;
   const tint = useCoverTint(list?.imageUrl ?? null);
+  const heroTitle = useHeroTitle(list?.name, onHeroTitleHidden);
   const ownedByListener =
     list?.kind === "likedSongs" || list?.ownerId === listener.id;
   const ownerImage = ownedByListener ? listener.imageUrl : null;
@@ -134,19 +109,6 @@ export function TracklistPage({
     observer.observe(sentinel.current);
     return () => observer.disconnect();
   }, [list, checking, refreshing]);
-
-  const name = list?.name;
-  useEffect(() => {
-    if (!name || !heroTitle.current) return;
-    const observer = new IntersectionObserver(([entry]) =>
-      onHeroTitleHidden(entry.isIntersecting ? null : name),
-    );
-    observer.observe(heroTitle.current);
-    return () => {
-      observer.disconnect();
-      onHeroTitleHidden(null);
-    };
-  }, [name, onHeroTitleHidden]);
 
   if (state.status === "error")
     return (
@@ -235,7 +197,11 @@ export function TracklistPage({
                 {ownerImage && (
                   <img className="owner-avatar" src={ownerImage} alt="" />
                 )}
-                {list.owner}
+                {list.artists ? (
+                  <ArtistLinks artists={list.artists} onOpen={onOpen} />
+                ) : (
+                  list.owner
+                )}
               </span>
               {list.year && <span>· {list.year}</span>}
               {!list.tracksHidden && (
@@ -365,7 +331,9 @@ export function TracklistPage({
                       ))}
                     <span className="track-text">
                       <span className="track-name">{track.name}</span>
-                      <span className="track-sub">{track.artists}</span>
+                      <span className="track-sub">
+                        <ArtistLinks artists={track.artists} onOpen={onOpen} />
+                      </span>
                     </span>
                   </span>
                   {!isAlbum && (

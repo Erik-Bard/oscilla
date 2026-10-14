@@ -1,8 +1,10 @@
+export type Credit = { name: string; uri: string | null };
+
 export type Track = {
   key: string;
   uri: string;
   name: string;
-  artists: string;
+  artists: Credit[];
   album: string | null;
   imageUrl: string | null;
   addedAt: string | null;
@@ -15,6 +17,7 @@ export type Tracklist = {
   typeLabel: string;
   name: string;
   owner: string;
+  artists?: Credit[];
   ownerId: string | null;
   year: string | null;
   imageUrl: string | null;

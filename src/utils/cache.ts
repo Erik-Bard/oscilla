@@ -1,5 +1,5 @@
 const DATABASE = "oscilla-cache";
-const STORED_SHAPE_VERSION = 1;
+const STORED_SHAPE_VERSION = 2;
 const STORE = "entries";
 
 export function libraryKey(listenerId: string) {

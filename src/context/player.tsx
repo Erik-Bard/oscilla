@@ -23,7 +23,7 @@ type SdkState = {
       uri: string;
       name: string;
       album: { images: SpotifyImage[] };
-      artists: { name: string }[];
+      artists: { name: string; uri: string }[];
     };
   };
 };
@@ -93,6 +93,7 @@ type Player = {
   shuffle: boolean;
   toggleShuffle: () => void;
   play: (contextUri: string, trackUri?: string) => void;
+  playTracks: (uris: string[], trackUri: string) => void;
   togglePlay: () => void;
   previous: () => void;
   next: () => void;
@@ -145,7 +146,7 @@ function toNowPlaying(state: SdkState): NowPlaying {
     contextUri: state.context.uri,
     trackUri: track.uri,
     name: track.name,
-    artists: track.artists.map((a) => a.name).join(", "),
+    artists: track.artists.map(({ name, uri }) => ({ name, uri })),
     imageUrl: coverUrl(track.album.images),
     paused: state.paused,
     durationMs: state.duration,
@@ -229,7 +230,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       { method: "PUT" },
     );
 
-  const play = (contextUri: string, trackUri?: string) => {
+  const startPlayback = (body: () => Promise<object>) => {
     if (!player.current || !deviceId.current) {
       setError(
         "Oscilla is still connecting to Spotify. Try again in a moment.",
@@ -239,23 +240,32 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     void player.current.activateElement();
     setError(null);
     void (async () => {
-      let offset: object | undefined = trackUri ? { uri: trackUri } : undefined;
-      if (!offset && shuffle) {
-        const total = await trackCount(contextUri);
-        if (total) offset = { position: Math.floor(Math.random() * total) };
-      }
       const res = await spotifyFetch(
         `/me/player/play?device_id=${deviceId.current}`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ context_uri: contextUri, offset }),
+          body: JSON.stringify(await body()),
         },
       );
       if (!res.ok) return setError(PLAYBACK_FAILED);
       await sendShuffle(shuffle);
     })().catch(() => setError(PLAYBACK_FAILED));
   };
+
+  const play = (contextUri: string, trackUri?: string) =>
+    startPlayback(async () => {
+      let offset: object | undefined = trackUri ? { uri: trackUri } : undefined;
+      const contextTakesOffset = !contextUri.startsWith("spotify:artist:");
+      if (!offset && shuffle && contextTakesOffset) {
+        const total = await trackCount(contextUri);
+        if (total) offset = { position: Math.floor(Math.random() * total) };
+      }
+      return { context_uri: contextUri, offset };
+    });
+
+  const playTracks = (uris: string[], trackUri: string) =>
+    startPlayback(async () => ({ uris, offset: { uri: trackUri } }));
 
   const toggleShuffle = () => {
     setShuffle(!shuffle);
@@ -286,6 +296,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     shuffle,
     toggleShuffle,
     play,
+    playTracks,
     togglePlay: () => void player.current?.togglePlay(),
     previous: () => void player.current?.previousTrack(),
     next: () => void player.current?.nextTrack(),

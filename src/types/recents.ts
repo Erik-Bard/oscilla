@@ -6,5 +6,6 @@ export type Candidate = Played &
   (
     | { kind: "album"; album: Play["track"]["album"] }
     | { kind: "playlist" }
+    | { kind: "artist" }
     | { kind: "likedSongs" }
   );

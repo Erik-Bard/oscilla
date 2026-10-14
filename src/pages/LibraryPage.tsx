@@ -19,7 +19,7 @@ import {
   rememberTracklist,
 } from "../utils/loadTracklist";
 import { spotifyFetch } from "../utils/spotify";
-import { formatDuration } from "../utils/tracklist";
+import { creditNames, formatDuration } from "../utils/tracklist";
 import type { LibraryItem } from "../types/library";
 import type { Tracklist } from "../types/tracklist";
 import type { Listener } from "../types/session";
@@ -221,7 +221,9 @@ function LikedSongs({
     );
   if (!list) return <SkeletonRows />;
 
-  const tracks = list.tracks.filter((t) => matches(query, t.name, t.artists));
+  const tracks = list.tracks.filter((t) =>
+    matches(query, t.name, creditNames(t.artists)),
+  );
   return (
     <>
       {tracks.length === 0 && !next ? (
@@ -240,7 +242,7 @@ function LikedSongs({
               <CoverRow
                 key={track.key}
                 name={track.name}
-                label={track.artists}
+                label={creditNames(track.artists)}
                 imageUrl={track.imageUrl}
                 current={current}
                 playing={current && !nowPlaying.paused}

@@ -1,4 +1,5 @@
 import { useEffect, useState, type CSSProperties } from "react";
+import { ArtistLinks } from "./ArtistLinks";
 import { PauseIcon, PlayIcon } from "./icons";
 import { usePlayer } from "../context/player";
 import { formatDuration } from "../utils/tracklist";
@@ -44,7 +45,7 @@ function VolumeIcon({ muted }: { muted: boolean }) {
   );
 }
 
-export function NowPlayingBar() {
+export function NowPlayingBar({ onOpen }: { onOpen: (uri: string) => void }) {
   const player = usePlayer();
   const { nowPlaying, error, volume } = player;
   const [dragMs, setDragMs] = useState<number | null>(null);
@@ -79,7 +80,9 @@ export function NowPlayingBar() {
           )}
           <div className="np-text">
             <p className="np-title">{nowPlaying.name}</p>
-            <p className="np-sub">{nowPlaying.artists}</p>
+            <p className="np-sub">
+              <ArtistLinks artists={nowPlaying.artists} onOpen={onOpen} />
+            </p>
           </div>
         </div>
         <div className="transport">
