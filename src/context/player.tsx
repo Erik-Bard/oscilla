@@ -65,6 +65,7 @@ declare global {
         name: string;
         getOAuthToken: (callback: (token: string) => void) => void;
         volume: number;
+        enableMediaSession: boolean;
       }) => SdkPlayer;
     };
   }
@@ -178,6 +179,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
               callback,
             ),
           volume: saved.volume,
+          enableMediaSession: true,
         });
         created.addListener("ready", ({ device_id }) => {
           deviceId.current = device_id;
